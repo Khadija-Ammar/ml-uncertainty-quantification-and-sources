@@ -21,7 +21,7 @@ from sklearn.metrics import (
 
 @dataclass
 class GBConfig:
-    n_estimators:     int   = 200
+    n_estimators:     int   = 175
     learning_rate:    float = 0.05
     max_depth:        int   = 3
     min_samples_split: int  = 10      # ✅ maintenant passé au modèle

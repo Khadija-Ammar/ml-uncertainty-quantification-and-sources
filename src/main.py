@@ -4,11 +4,12 @@ from model import (
     GBConfig,        LRConfig,
     plot_roc_curves  
 )
-from calibrator import prob_calibrator, expected_calibration_error, plot_ece_comparison
+from calibrator import prob_calibrator, expected_calibration_error, plot_ece_comparison, brier_score_loss, plot_brier_score_comparison
 from inference_prop_pred import (
     plot_proba_distributions,
     ks_test_analysis,
 )
+from CP_Splitor import SplitConformalClassifier
 import numpy as np
 
 
@@ -55,7 +56,7 @@ gb.fit(X_train, y_train)
 
 lr = LRUQClassifier(LRConfig(class_weight={0: 1.0, 1: 8.0}))
 lr.fit(X_train, y_train)
-
+print("Model training complete.")
 # ==============================================================================
 # 3. Évaluation sur validation (avant calibration)
 # ==============================================================================
@@ -92,6 +93,53 @@ ece_dict = {
 
 plot_ece_comparison(ece_dict)
 
+
+# ==============================================================================
+# 6. brier score sur le val set
+# ==============================================================================
+brier_dict = {
+    "GB non calibré" : brier_score_loss(y_val, gb.predict_proba(X_val)[:, 1]),
+    "GB calibré"     : brier_score_loss(y_val, cal_gb.predict_proba(X_val)[:, 1]),
+    "LR non calibré" : brier_score_loss(y_val, lr.predict_proba(X_val)[:, 1]),
+    "LR calibré"     : brier_score_loss(y_val, cal_lr.predict_proba(X_val)[:, 1]),
+}
+
+plot_brier_score_comparison(brier_dict)
+
+
+
+# ==============================================================================
+# 7. On calibre sur le val set, on évalue sur le test set
+# =============================================================================
+cp_gb = SplitConformalClassifier(alpha=0.1)
+cp_gb.calibrate(cal_gb, X_val, y_val)          # ou cal_gb si calibré
+
+pred_sets_gb = cp_gb.predict_set(cal_gb, X_test)
+#metrics_gb   = cp_gb.compute_metrics(pred_sets_gb, y_test)
+
+# Visualisations
+cp_gb.plot_nonconformity_scores()
+cp_gb.plot_prediction_sets(pred_sets_gb, y_test)
+cp_gb.plot_coverage_vs_alpha(cal_gb, X_val, y_val, X_test, y_test)
+
+
+# Même chose pour LR
+
+cp_lr = SplitConformalClassifier(alpha=0.1)
+cp_lr.calibrate(cal_lr, X_val, y_val)
+
+pred_sets_lr = cp_lr.predict_set(cal_lr, X_test)
+#metrics_lr   = cp_lr.compute_metrics(pred_sets_lr, y_test)
+
+cp_lr.plot_nonconformity_scores()
+cp_lr.plot_prediction_sets(pred_sets_lr, y_test)
+cp_lr.plot_coverage_vs_alpha(cal_lr, X_val, y_val, X_test, y_test)
+
+
+
+
+
+
 """# ==============================================================================
 # 6. Evaluation final du model sur test set (calibré vs non calibré)
 # ==============================================================================
@@ -114,8 +162,12 @@ plot_roc_curves(
     X=X_test, y=y_test
 )   
 """
+
+
+
+
 # ==============================================================================
-# 7. Analyse des distributions de probabilités prédites
+# . Analyse des distributions de probabilités prédites
 # ==============================================================================
 
 # Les classifiers peuvent être custom ou calibrés
