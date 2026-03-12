@@ -54,9 +54,6 @@ class Preprocessor:
         # ✅ Ajout : LabelEncoder pour la variable cible
         self.label_encoder = LabelEncoder()
 
-    def load_data(self, path: str, sep: str = ";") -> pd.DataFrame:
-        """Load dataset from csv file."""
-        return pd.read_csv(path, sep=sep)
 
     def drop_unwanted_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Drop columns that should not be used."""

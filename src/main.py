@@ -11,12 +11,14 @@ from inference_prop_pred import (
 )
 from CP_Splitor import SplitConformalClassifier
 import numpy as np
+import pandas as pd
 
 
-#***************************
+#=============================================================================
 # 1. PREPROCESSING 
-#***************************
+#=============================================================================
 
+print ( "=== 1. PREPROCESSING ===" )
 
 preproc = Preprocessor(                 # ✅ Initialisation avec les bons paramètres
     target_column="y",
@@ -26,47 +28,53 @@ preproc = Preprocessor(                 # ✅ Initialisation avec les bons param
     random_state=42
 )
 
-df = preproc.load_data("data/bank.csv", sep=";")   # ✅ Chargement
+df = pd.read_csv("data\\bank-full.csv", sep=";")   # ✅ Chargement
+print ( "dimension du dataset :", df.shape)
 df = preproc.drop_unwanted_columns(df)             # ✅ Nettoyage
+print ( "dimension après nettoyage :", df.shape)
 df = preproc.encode_target(df)                   # ✅ Encodage cible
-splits = preproc.split_data(df)                    # ✅ Split stratifié
+print ( "dimension après encodage :", df.shape)
+splits = preproc.split_data(df)     # ✅ Split stratifié
 transformed_data = preproc.fit_transform_splits(splits)  # ✅ Fit + Transform
-
 
 X_train = transformed_data["X_train"]
 X_val   = transformed_data["X_val"]
 X_test  = transformed_data["X_test"]
 
+print ( "dimension X_train :", X_train.shape)
+print ( "dimension X_val :", X_val.shape)   
+print ( "dimension X_test :", X_test.shape)
+
 y_train = transformed_data["y_train"]
 y_val   = transformed_data["y_val"]
-y_test  = transformed_data["y_test"]
+y_test  = transformed_data["y_test"]    
 
-
+print ( "dimension y_train :", y_train.shape)
+print ( "dimension y_val :", y_val.shape)
+print ( "dimension y_test :", y_test.shape)
 
 print("Preprocessing complete.")
 
 
-#*******************
+#=============================================================================
 # 2. MODEL TRAINING
-#*******************
-
+#=============================================================================
+print ( "\n=== 2. MODEL TRAINING ===" )
 
 gb = GBUQClassifier(GBConfig(minority_weight=8.0))
 gb.fit(X_train, y_train)
 
 lr = LRUQClassifier(LRConfig(class_weight={0: 1.0, 1: 8.0}))
 lr.fit(X_train, y_train)
-print("Model training complete.")
-# ==============================================================================
-# 3. Évaluation sur validation (avant calibration)
-# ==============================================================================
+
+#  Évaluation sur validation (avant calibration)
+
 print("\n--- Évaluation sur VALIDATION (non calibré) ---")
 gb.evaluate(X_val, y_val, label="GB  non calibré")
 lr.evaluate(X_val, y_val, label="LR  non calibré")
 
-# ==============================================================================
-# 4. Courbes ROC sur val set ( non calibré)
-# ==============================================================================
+
+# Courbes ROC sur val set ( non calibré)
 plot_roc_curves(
     classifiers={
         "GB  non calibré" : gb,   # use_calibrated=True par défaut donc...
@@ -74,10 +82,6 @@ plot_roc_curves(
     },
     X=X_val, y=y_val
 )
-
-# ==============================================================================
-# 5. Calibration sur validation set
-# ==============================================================================
 
 # --- Calibration (sur validation set) ---
 cal_gb = prob_calibrator(gb, X_val, y_val, method="sigmoid")
@@ -90,27 +94,28 @@ ece_dict = {
     "LR non calibré" : expected_calibration_error(y_val, lr.predict_proba(X_val)[:, 1]),
     "LR calibré"     : expected_calibration_error(y_val, cal_lr.predict_proba(X_val)[:, 1]),
 }
-
 plot_ece_comparison(ece_dict)
 
-
-# ==============================================================================
-# 6. brier score sur le val set
-# ==============================================================================
+#  brier score sur le val set
 brier_dict = {
     "GB non calibré" : brier_score_loss(y_val, gb.predict_proba(X_val)[:, 1]),
     "GB calibré"     : brier_score_loss(y_val, cal_gb.predict_proba(X_val)[:, 1]),
     "LR non calibré" : brier_score_loss(y_val, lr.predict_proba(X_val)[:, 1]),
     "LR calibré"     : brier_score_loss(y_val, cal_lr.predict_proba(X_val)[:, 1]),
 }
-
 plot_brier_score_comparison(brier_dict)
+
+print("Model training complete.")
+
 
 
 
 # ==============================================================================
-# 7. On calibre sur le val set, on évalue sur le test set
+# 3. Split conformal prediction on test set
 # =============================================================================
+print ( "\n=== 3. Split conformal prediction on TEST set ===" )
+
+# CP sur GB (calibré )
 cp_gb = SplitConformalClassifier(alpha=0.1)
 cp_gb.calibrate(cal_gb, X_val, y_val)          # ou cal_gb si calibré
 
@@ -120,11 +125,9 @@ pred_sets_gb = cp_gb.predict_set(cal_gb, X_test)
 # Visualisations
 cp_gb.plot_nonconformity_scores()
 cp_gb.plot_prediction_sets(pred_sets_gb, y_test)
-cp_gb.plot_coverage_vs_alpha(cal_gb, X_val, y_val, X_test, y_test)
+#cp_gb.plot_coverage_vs_alpha(cal_gb, X_val, y_val, X_test, y_test)
 
-
-# Même chose pour LR
-
+# CP sur LR (calibré)
 cp_lr = SplitConformalClassifier(alpha=0.1)
 cp_lr.calibrate(cal_lr, X_val, y_val)
 
@@ -133,54 +136,4 @@ pred_sets_lr = cp_lr.predict_set(cal_lr, X_test)
 
 cp_lr.plot_nonconformity_scores()
 cp_lr.plot_prediction_sets(pred_sets_lr, y_test)
-cp_lr.plot_coverage_vs_alpha(cal_lr, X_val, y_val, X_test, y_test)
-
-
-
-
-
-
-"""# ==============================================================================
-# 6. Evaluation final du model sur test set (calibré vs non calibré)
-# ==============================================================================
-print("\n--- Évaluation sur TEST SET ---")
-for label, clf in [
-    ("GB non calibré", gb),
-    
-    ("LR non calibré", lr),
-    
-]:
-    clf.evaluate(X_test, y_test, label=label)
-    
-plot_roc_curves(
-    classifiers={
-        
-        "
-        "GB non calibré" : gb,
-        "LR non calibré" : lr,
-    },
-    X=X_test, y=y_test
-)   
-"""
-
-
-
-
-# ==============================================================================
-# . Analyse des distributions de probabilités prédites
-# ==============================================================================
-
-# Les classifiers peuvent être custom ou calibrés
-all_models = {
-    "GB non calibré" : gb,       # GBUQClassifier
-    "LR non calibré" : lr,       # LRUQClassifier
-    "GB calibré"     : cal_gb,   # CalibratedClassifierCV
-    "LR calibré"     : cal_lr,   # CalibratedClassifierCV
-}
-
-# Distribution des probabilités
-plot_proba_distributions(all_models, X_test, title_suffix="(test set)")
-
-# Test KS + visualisation
-ks_results = ks_test_analysis(all_models, X_test)
-
+#cp_lr.plot_coverage_vs_alpha(cal_lr, X_val, y_val, X_test, y_test)
