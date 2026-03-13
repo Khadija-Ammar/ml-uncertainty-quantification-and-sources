@@ -4,7 +4,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
-
+import pandas as pd
 
 class SplitConformalClassifier:
     """
@@ -182,15 +182,98 @@ class SplitConformalClassifier:
         print(f"  Sets {{0,1}}           : {metrics['both_classes']:.4f}")
 
         return metrics
+    
+    def int_uncertainty(self, prediction_set: list) -> list[int]:
+        """
+        Calcule l'incertitude basée sur la taille de l'ensemble de prédiction.
 
-    # ------------------------------------------------------------------
-    # Visualisations
-    # ------------------------------------------------------------------
+        Parameters
+        ----------
+        prediction_set : list
+            Ensemble de prédiction (sous-ensemble de {0, 1})
+
+        Returns
+        -------
+        list[int]
+            0 pour ensemble vide, 1 pour singleton, 2 pour {0, 1}
+        """
+        uncertainties = []
+        for s in prediction_set:
+            if len(s) == 0:
+                uncertainties.append(0)
+            elif len(s) == 1:
+                uncertainties.append(1)
+            elif len(s) == 2:
+                uncertainties.append(2)
+            else:
+                raise ValueError(f"Ensemble invalide : {s}. Attendu sous-ensemble de {{0, 1}}")
+        return uncertainties
+
+
+    def float_uncertainty(self) -> list[float]:
+        """
+        Calcule une incertitude continue basée sur les scores de non-conformité :
+        uncertainty = s_i - q̂
+
+        Un score négatif indique que la prédiction est bien couverte (s_i < q̂).
+        Un score positif indique une incertitude élevée (s_i > q̂).
+
+        Parameters
+        ----------
+        test_scores : np.ndarray
+            Scores de non-conformité des données de test
+
+        Returns
+        -------
+        list[float]
+            Incertitude continue pour chaque prédiction
+        """
+        if self.q_hat is None:
+            raise ValueError("q_hat n'est pas défini. Appelez d'abord la méthode de calibration.")
+        if self.cal_scores is None:
+            raise ValueError("cal_scores n'est pas défini. Appelez d'abord la méthode de calibration de score de non-conformité.")
+        
+        self.float_uncertainties = self.cal_scores - self.q_hat
+        return self.float_uncertainties.tolist()
+
+
+    # Méthode pour intégrer les incertitudes dans le dataset
+    def add_uncertainties_to_dataset(self, X: np.ndarray) -> pd.DataFrame:
+        """
+        Intègre les deux mesures d'incertitude dans le dataset.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Données de test (features)
+        prediction_set : list
+            Ensembles prédictifs issus de la conformal prediction
+
+        Returns
+        -------
+        pd.DataFrame
+            Dataset enrichi avec les colonnes d'incertitude
+        """
+        # Conversion en DataFrame si ce n'est pas déjà le cas
+        if isinstance(X, np.ndarray):
+            df = pd.DataFrame(X)
+        elif isinstance(X, pd.DataFrame):
+            df = X.copy()
+        else:
+            raise TypeError(f"Type non supporté pour X : {type(X)}. Attendu np.ndarray ou pd.DataFrame.")
+        df["float_uncertainty"] = self.float_uncertainty()
+
+        return df
+
+
+        # ------------------------------------------------------------------
+        # Visualisations
+        # ------------------------------------------------------------------
 
     def plot_nonconformity_scores(self):
         """
         Visualise la distribution des scores de non-conformité
-        et la position du quantile q̂.
+        et la position du quantile q̂.                       
         """
         if not self.is_calibrated:
             raise ValueError("Appelez calibrate() avant plot_nonconformity_scores().")
@@ -363,59 +446,34 @@ class SplitConformalClassifier:
         plt.show()
 
 
-    def plot_coverage_vs_alpha(self, model,
-                                X_cal: np.ndarray, y_cal: np.ndarray,
-                                X_test: np.ndarray, y_test: np.ndarray,
-                                alphas: np.ndarray = None):
+    def plot_float_uncertainty_distribution(self):
         """
-        Trace la couverture empirique en fonction de alpha.
-        Permet de vérifier la garantie théorique : couverture ≥ 1 - alpha.
-
-        Parameters
-        ----------
-        model          : modèle avec predict_proba()
-        X_cal, y_cal   : calibration set
-        X_test, y_test : test set
-        alphas         : niveaux alpha à tester (défaut : 0.01 à 0.5)
+        Visualise la distribution de l'incertitude continue (s_i - q̂).
         """
-        if alphas is None:
-            alphas = np.linspace(0.01, 0.5, 50)
+        if not hasattr(self, "float_uncertainties"):
+            raise ValueError("float_uncertainties n'est pas calculé. Appelez d'abord float_uncertainty().")
 
-        coverages  = []
-        set_sizes  = []
-
-        for a in alphas:
-            cp = SplitConformalClassifier(alpha=a)
-            cp.calibrate(model, X_cal, y_cal)
-            pred_sets = cp.predict_set(model, X_test)
-            metrics   = cp.compute_metrics(pred_sets, y_test)
-            coverages.append(metrics["coverage"])
-            set_sizes.append(metrics["avg_set_size"])
-
-        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
-        # Couverture vs alpha
-        axes[0].plot(alphas, coverages,
-                     color="steelblue", linewidth=2, label="Couverture empirique")
-        axes[0].plot(alphas, 1 - alphas,
-                     color="red", linestyle="--",
-                     linewidth=1.5, label="Garantie 1 - α")
-        axes[0].fill_between(alphas, 1 - alphas, coverages,
-                              alpha=0.1, color="green",
-                              label="Marge de couverture")
-        axes[0].set_xlabel("α")
-        axes[0].set_ylabel("Couverture")
-        axes[0].set_title("Couverture empirique vs α")
-        axes[0].legend()
-        axes[0].grid(True, linestyle="--", alpha=0.5)
-
-        # Taille moyenne vs alpha
-        axes[1].plot(alphas, set_sizes,
-                     color="darkorange", linewidth=2)
-        axes[1].set_xlabel("α")
-        axes[1].set_ylabel("Taille moyenne des ensembles")
-        axes[1].set_title("Taille des ensembles de prédiction vs α")
-        axes[1].grid(True, linestyle="--", alpha=0.5)
-
+        plt.figure(figsize=(8, 5))
+        plt.hist(
+            self.float_uncertainties,
+            bins=40,
+            density=True,
+            alpha=0.6,
+            color="salmon",
+            edgecolor="black",
+            label="Incertitude continue (s_i - q̂)"
+        )
+        plt.axvline(
+                self.q_hat,
+                color="red",
+                linewidth=2,
+                linestyle="--",
+                label=f"q̂ = {self.q_hat:.4f}  (α={self.alpha})"
+        )
+        plt.xlabel("Incertitude continue  s_i - q̂")
+        plt.ylabel("Densité")
+        plt.title("Distribution de l'incertitude continue (cal set)")
+        plt.legend()
+        plt.grid(True, linestyle="--", alpha=0.5)
         plt.tight_layout()
         plt.show()

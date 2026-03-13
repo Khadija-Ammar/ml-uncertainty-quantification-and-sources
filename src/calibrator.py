@@ -49,30 +49,9 @@ def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 
     calibrated_model = CalibratedClassifierCV(
         estimator=raw_sklearn_model,   # ✅ estimateur sklearn pur
         method=method,
-        cv="prefit"                    # ✅ modèle déjà fitté, pas de re-fit
+        cv="prefit"                    # ✅ modèle déjà fitté, pas de re-fit, You can use CalibratedClassifierCV(FrozenEstimator(estimator)) instead, because the estimator is already fitted.
     )
     calibrated_model.fit(X_cal, y_cal)
-
-    # ---------- AFTER calibration ----------
-    y_proba_cal = calibrated_model.predict_proba(X_cal)[:, 1]
-    prob_true_after, prob_pred_after = calibration_curve(
-        y_cal, y_proba_cal, n_bins=n_bins
-    )
-
-    # ---------- Plot ----------
-    plt.figure(figsize=(8, 6))
-    plt.plot(prob_pred_before, prob_true_before,
-             "o-", label="Avant calibration")
-    plt.plot(prob_pred_after, prob_true_after,
-             "o-", label="Après calibration")
-    plt.plot([0, 1], [0, 1], "k--", label="Calibration parfaite")
-    plt.xlabel("Probabilité prédite moyenne")
-    plt.ylabel("Fraction de positifs")
-    plt.title("Courbes de Calibration")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
 
     return calibrated_model
 
@@ -130,8 +109,44 @@ def brier_score_loss(y_true, y_prob):
 
 
 # ==============================================================================
-# Visualisation ECE + brier score
+# Visualisation ECE + brier score + Before/After calibration
 # ==============================================================================
+
+def plot_BA_calibration_curve(model, calibrated_model, X_cal, y_cal):
+    """
+    Trace les courbes de calibration avant/après calibration.
+
+    Parameters
+    ----------
+    model            : modèle non calibré (GBUQClassifier ou LRUQClassifier)
+    calibrated_model : modèle calibré (CalibratedClassifierCV)
+    X_cal            : features de calibration
+    y_cal            : labels de calibration
+    """
+    # Probabilités avant calibration
+    y_proba_before = model.predict_proba(X_cal)[:, 1]
+    prob_true_before, prob_pred_before = calibration_curve(
+        y_cal, y_proba_before, n_bins=10
+    )
+
+    # Probabilités après calibration
+    y_proba_after = calibrated_model.predict_proba(X_cal)[:, 1]
+    prob_true_after, prob_pred_after = calibration_curve(
+        y_cal, y_proba_after, n_bins=10
+    )
+
+    # Plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(prob_pred_before, prob_true_before, marker="o", label="Avant Calibration", color="salmon")
+    plt.plot(prob_pred_after, prob_true_after, marker="o", label="Après Calibration", color="steelblue")
+    plt.plot([0, 1], [0, 1], linestyle="--", color="gray")
+    plt.xlabel("Probabilité prédite")
+    plt.ylabel("Probabilité vraie")
+    plt.title("Courbe de Calibration — Avant vs Après")
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
 
 def plot_ece_comparison(ece_dict: dict):
     """
@@ -191,7 +206,7 @@ def plot_brier_score_comparison(brier_dict: dict):
             bar.get_height() + 0.002,
             f"{val:.4f}",
             ha="center", va="bottom", fontsize=10
-        )
+        )                                              
 
     plt.xticks(rotation=15, ha="right")
     plt.grid(axis="y", linestyle="--", alpha=0.7)
