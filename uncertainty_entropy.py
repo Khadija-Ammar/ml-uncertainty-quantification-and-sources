@@ -32,7 +32,7 @@ warnings.filterwarnings("ignore")
 # CONFIG
 # =============================================================================
 
-DATA_PATH = "bank-full.csv"   # mets le csv dans le même dossier que ce script
+DATA_PATH = "bank-full.csv"
 RESULTS_DIR = "results_entropy_gb"
 RANDOM_STATE = 42
 
