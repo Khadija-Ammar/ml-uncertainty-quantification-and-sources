@@ -111,7 +111,7 @@ print("Raw dataset shape:", df.shape)
 
 # =============================================================================
 # 2. PREPROCESSING
-# - same logic as your project pipeline
+# - same logic as our project pipeline
 # - duration excluded for consistency / leakage avoidance
 # =============================================================================
 
@@ -189,7 +189,7 @@ save_dataframe(gb_metrics, "gb_classifier_metrics.csv")
 
 # =============================================================================
 # 4. CALIBRATION
-# IMPORTANT: calibrate the INNER sklearn model -> gb.model
+# calibrate the INNER sklearn model -> gb.model
 # =============================================================================
 
 print("\n=== 4. CALIBRATION ===")
