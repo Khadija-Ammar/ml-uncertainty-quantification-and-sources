@@ -10,55 +10,49 @@ from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 # Calibration
 # ==============================================================================
 
-def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 10):
-    """
-    Calibre les probabilités d'un modèle déjà fitté et trace les courbes
-    de calibration avant/après.
+from sklearn.calibration import CalibratedClassifierCV
 
-    Parameters
-    ----------
-    model   : instance de GBUQClassifier ou LRUQClassifier (déjà fitté)
-    X_cal   : features de calibration (validation set)
-    y_cal   : labels de calibration
-    method  : 'sigmoid' ou 'isotonic'
-    n_bins  : nombre de bins pour la courbe de calibration
-
-    Returns
-    -------
-    calibrated_model : CalibratedClassifierCV fitté
-    """
+def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 10, cv: int = 5):
     if not model.is_fitted_:
         raise ValueError("Le modèle doit être fitté avant la calibration.")
 
-    # ✅ Correction principale : on passe model.model (sklearn pur) + cv="prefit"
     raw_sklearn_model = model.model
 
     # ---------- BEFORE calibration ----------
     y_proba = model.predict_proba(X_cal)[:, 1]
-    prob_true_before, prob_pred_before = calibration_curve(
-        y_cal, y_proba, n_bins=n_bins
-    )
+    prob_true_before, prob_pred_before = calibration_curve(y_cal, y_proba, n_bins=n_bins)
 
     # ---------- Calibration ----------
-    calibrated_model = CalibratedClassifierCV(
-        estimator=raw_sklearn_model,   # ✅ estimateur sklearn pur
-        method=method,
-        cv="prefit"                    # ✅ modèle déjà fitté, pas de re-fit
-    )
+    # sklearn récent : plus de cv="prefit"
+    # Option 1: "frozen" prefit (recommandée)
+    try:
+        from sklearn.frozen import FrozenEstimator
+        estimator = FrozenEstimator(raw_sklearn_model)
+        calibrated_model = CalibratedClassifierCV(
+            estimator=estimator,
+            method=method,
+            cv=cv,              # doit être un int >=2
+            ensemble=False      # plus simple: un seul calibrateur final
+        )
+    except Exception:
+        # Option 2: fallback (refit dans la calibration via CV)
+        calibrated_model = CalibratedClassifierCV(
+            estimator=raw_sklearn_model,
+            method=method,
+            cv=cv,
+            ensemble=False
+        )
+
     calibrated_model.fit(X_cal, y_cal)
 
     # ---------- AFTER calibration ----------
     y_proba_cal = calibrated_model.predict_proba(X_cal)[:, 1]
-    prob_true_after, prob_pred_after = calibration_curve(
-        y_cal, y_proba_cal, n_bins=n_bins
-    )
+    prob_true_after, prob_pred_after = calibration_curve(y_cal, y_proba_cal, n_bins=n_bins)
 
     # ---------- Plot ----------
     plt.figure(figsize=(8, 6))
-    plt.plot(prob_pred_before, prob_true_before,
-             "o-", label="Avant calibration")
-    plt.plot(prob_pred_after, prob_true_after,
-             "o-", label="Après calibration")
+    plt.plot(prob_pred_before, prob_true_before, "o-", label="Avant calibration")
+    plt.plot(prob_pred_after, prob_true_after, "o-", label="Après calibration")
     plt.plot([0, 1], [0, 1], "k--", label="Calibration parfaite")
     plt.xlabel("Probabilité prédite moyenne")
     plt.ylabel("Fraction de positifs")
@@ -69,8 +63,6 @@ def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 
     plt.show()
 
     return calibrated_model
-
-
 # ==============================================================================
 # ECE
 # ==============================================================================
