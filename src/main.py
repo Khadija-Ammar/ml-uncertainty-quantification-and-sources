@@ -10,6 +10,8 @@ from inference_prop_pred import (
     ks_test_analysis,
 )
 from CP_Splitor import SplitConformalClassifier
+from Interpretor import UncertaintyInterpreter
+
 
 import numpy as np
 import pandas as pd
@@ -55,15 +57,12 @@ df = pd.read_csv("data\\bank-full.csv", sep=";")
 print("dimension du dataset :", df.shape)
 
 df = preproc.drop_unwanted_columns(df)
-
 print("dimension après nettoyage :", df.shape)
 
 df = preproc.encode_target(df)
-
 print("dimension après encodage :", df.shape)
 
 splits = preproc.split_data(df)
-
 transformed_data = preproc.fit_transform_splits(splits)
 
 X_train = transformed_data["X_train"]
@@ -144,7 +143,6 @@ ece_dict = {
 }
 
 plot_ece_comparison(ece_dict)
-
 save_plot("ece_comparison.png")
 
 
@@ -158,7 +156,6 @@ brier_dict = {
 }
 
 plot_brier_score_comparison(brier_dict)
-
 save_plot("brier_scores.png")
 
 print("Model training complete.")
@@ -174,38 +171,28 @@ print("\n=== 3. Split conformal prediction on TEST set ===")
 # --- GB MODEL ---
 
 cp_gb = SplitConformalClassifier(alpha=0.1)
-
 cp_gb.calibrate(cal_gb, X_val, y_val)
 
-pred_sets_gb = cp_gb.predict_set(cal_gb, X_test)
-
+pred_sets_gb = cp_gb.predict_set(model=cal_gb, X_test=X_test)
 
 cp_gb.plot_nonconformity_scores()
-
 save_plot("gb_nonconformity_scores.png")
 
-
 cp_gb.plot_prediction_sets(pred_sets_gb, y_test)
-
 save_plot("gb_prediction_sets.png")
 
 
 # --- LR MODEL ---
 
 cp_lr = SplitConformalClassifier(alpha=0.1)
-
 cp_lr.calibrate(cal_lr, X_val, y_val)
 
-pred_sets_lr = cp_lr.predict_set(cal_lr, X_test)
-
+pred_sets_lr = cp_lr.predict_set(model=cal_lr, X_test=X_test)
 
 cp_lr.plot_nonconformity_scores()
-
 save_plot("lr_nonconformity_scores.png")
 
-
 cp_lr.plot_prediction_sets(pred_sets_lr, y_test)
-
 save_plot("lr_prediction_sets.png")
 
 
@@ -213,28 +200,51 @@ save_plot("lr_prediction_sets.png")
 # UNCERTAINTY ANALYSIS
 # =============================================================================
 
-df_for_uncert_gb = cp_gb.add_uncertainties_to_dataset(X_val)
-df_for_uncert_lr = cp_lr.add_uncertainties_to_dataset(X_val)
+print("\n=== 4. UNCERTAINTY ANALYSIS ===")
 
+# Ajout des incertitudes sur X_val
+df_for_uncert_gb = cp_gb.add_uncertainties_to_dataset(model=cal_gb, X=X_test)
+df_for_uncert_lr = cp_lr.add_uncertainties_to_dataset(model=cal_lr, X=X_test)
+
+# Tracé des distributions d'incertitude
 cp_gb.plot_float_uncertainty_distribution()
-save_plot("uncertainty_distribution_gb.png")
+save_plot("uncertainty_entropy_gb.png")
+
+cp_gb.plot_height_uncertainty_distribution()
+save_plot("uncertainty_height_gb.png")
 
 cp_lr.plot_float_uncertainty_distribution()
-save_plot("uncertainty_distribution_lr.png")
+save_plot("uncertainty_entropy_lr.png")
 
-
+cp_lr.plot_height_uncertainty_distribution()
+save_plot("uncertainty_height_lr.png")
 
 
 print("\n=== PIPELINE COMPLETE ===")
 print(f"All graphs saved in : {RESULTS_DIR}/")
 
+#====================================================================================
+# Uncertainty Interpretability
+#====================================================================================
 
 
+interp = UncertaintyInterpreter()
 
+interp.fit_entropy_model(df_for_uncert_gb)
+interp.fit_height_model(df_for_uncert_gb)
 
+interp.compute_shap_entropy(df_for_uncert_gb)
+interp.compute_shap_height(df_for_uncert_gb)
 
+interp.plot_shap_entropy(df_for_uncert_gb)
+save_plot("shap_entropy.png")
+interp.plot_shap_height(df_for_uncert_gb)
+save_plot("shap_height.png")
 
+top_entropy, top_height = interp.get_top_features(df_for_uncert_gb, k=10)
 
+print("\nTop features générant de l'entropie :")
+print(top_entropy)
 
-
-
+print("\nTop features générant de la height uncertainty :")
+print(top_height)
