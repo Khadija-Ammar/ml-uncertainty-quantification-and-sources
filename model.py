@@ -21,8 +21,8 @@ from sklearn.metrics import (
 
 @dataclass
 class GBConfig:
-    n_estimators:     int   = 18
-    learning_rate:    float = 0.1
+    n_estimators:     int   = 200
+    learning_rate:    float = 0.05
     max_depth:        int   = 3
     min_samples_split: int  = 10      # ✅ maintenant passé au modèle
     random_state:     int   = 42
