@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
 import pandas as pd
+import seaborn as sns
 
 
 class SplitConformalClassifier:
@@ -32,7 +33,7 @@ class SplitConformalClassifier:
 
         # Pour les incertitudes continues / discrètes
         self.entropy_uncertainty_ = None
-        self.height_uncertainty_ = None
+        self.size_uncertainty_ = None
 
     # ------------------------------------------------------------------
     # Nonconformity score
@@ -184,10 +185,10 @@ class SplitConformalClassifier:
         return metrics
 
     # ------------------------------------------------------------------
-    # Incertitudes : height + entropy
+    # Incertitudes : seize + entropy
     # ------------------------------------------------------------------
 
-    def height_uncertainty(self, model, X_test: np.ndarray) -> list[int]:
+    def size_uncertainty(self, model, X_test: np.ndarray) -> list[int]:
         """
         Calcule l'incertitude basée sur la taille de l'ensemble de prédiction.
 
@@ -202,16 +203,17 @@ class SplitConformalClassifier:
             Taille de l'ensemble de prédiction pour chaque x
         """
         prediction_sets = self.predict_set(model=model, X_test=X_test)
-        height_uncertainty = [len(s) for s in prediction_sets]
-        self.height_uncertainty_ = np.array(height_uncertainty)
-        return height_uncertainty
+        size_uncertainty = [len(s) for s in prediction_sets]
+        self.size_uncertainty_ = np.array(size_uncertainty)
+        return size_uncertainty
 
     def entropy_uncertainty(self, model, X: np.ndarray) -> list[float]:
         """
         Calcule une incertitude continue basée sur les scores de non-conformité
         sur X, définie comme :
             s_i = 1 - max_y p̂(y|x_i)
-            uncertainty_i = s_i * log(1 - s_i)
+            uncertainty_i = -s_i * log( s_i) - (1 - s_i) * log(1 - s_i)
+        (entropie binaire du score de non-conformité)
 
         Parameters
         ----------
@@ -223,12 +225,11 @@ class SplitConformalClassifier:
         list[float]
             Incertitude continue pour chaque prédiction
         """
-        proba = model.predict_proba(X)  # shape (n, 2)
-        # score de non-conformité "pessimiste" basé sur la classe la plus probable
-        s = 1.0 - np.max(proba, axis=1)
+        proba    = model.predict_proba(X)[:, 1]  
+       
         # éviter log(0)
-        s = np.clip(s, 1e-12, 1 - 1e-12)
-        entropy = s * np.log(1 - s)
+        s = np.clip(proba, 1e-12, 1 - 1e-12)
+        entropy = -s * np.log(s) - (1 - s) * np.log(1 - s)
 
         self.entropy_uncertainty_ = entropy
         return entropy.tolist()
@@ -259,13 +260,13 @@ class SplitConformalClassifier:
         else:
             raise TypeError(f"Type non supporté pour X : {type(X)}. Attendu np.ndarray ou pd.DataFrame.")
 
-        height = self.height_uncertainty(model=model, X_test=X)
+        size = self.size_uncertainty(model=model, X_test=X)
         entropy = self.entropy_uncertainty(model=model, X=X)
 
-        if len(df) != len(height) or len(df) != len(entropy):
+        if len(df) != len(size) or len(df) != len(entropy):
             raise ValueError("Longueur de X et des incertitudes incohérente.")
 
-        df["height_uncertainty"] = height
+        df["size_uncertainty"] = size
         df["entropy_uncertainty"] = entropy
 
         return df
@@ -308,128 +309,27 @@ class SplitConformalClassifier:
         plt.show()
 
     def plot_prediction_sets(self, prediction_sets: list, y_test: np.ndarray):
-        """
-        Visualise la composition des ensembles de prédiction conforme.
+            """
+            Visualise la composition des ensembles de prédiction conforme.
 
-        3 types d'ensembles possibles :
-            {0}    → prédit classe 0 avec confiance
-            {1}    → prédit classe 1 avec confiance
-            {0,1}  → incertain (les deux classes plausibles)
-            {}     → ensemble vide (très rare)
-        """
-        y_test = np.array(y_test)
-        n = len(y_test)
+            3 types d'ensembles possibles :
+                {0}    → prédit classe 0 avec confiance
+                {1}    → prédit classe 1 avec confiance
+                {0,1}  → incertitude totale (les deux classes sont possibles)
+                """
+            df = pd.DataFrame({
+                "prediction_set": ["{0}" if s == [0] else "{1}" if s == [1] else "{0,1}" for s in prediction_sets],
+                "y_true": y_test
+            })
 
-        set_types = {
-            "vide {}": 0,
-            "singleton {0}": 0,
-            "singleton {1}": 0,
-            "incertain {0,1}": 0,
-        }
-
-        for s in prediction_sets:
-            fs = frozenset(s)
-            if fs == frozenset():
-                set_types["vide {}"] += 1
-            elif fs == frozenset({0}):
-                set_types["singleton {0}"] += 1
-            elif fs == frozenset({1}):
-                set_types["singleton {1}"] += 1
-            elif fs == frozenset({0, 1}):
-                set_types["incertain {0,1}"] += 1
-
-        proportions = {k: v / n for k, v in set_types.items()}
-
-        n0 = np.sum(y_test == 0)
-        n1 = np.sum(y_test == 1)
-
-        covered_0 = sum(
-            0 in prediction_sets[i]
-            for i in range(n) if y_test[i] == 0
-        )
-        covered_1 = sum(
-            1 in prediction_sets[i]
-            for i in range(n) if y_test[i] == 1
-        )
-        uncertain_0 = sum(
-            frozenset(prediction_sets[i]) == frozenset({0, 1})
-            for i in range(n) if y_test[i] == 0
-        )
-        uncertain_1 = sum(
-            frozenset(prediction_sets[i]) == frozenset({0, 1})
-            for i in range(n) if y_test[i] == 1
-        )
-
-        cov_labels = [
-            "Classe 0\n(no)",
-            "Classe 1\n(yes)",
-            "Incertains {0,1}\n| vrai=0",
-            "Incertains {0,1}\n| vrai=1",
-        ]
-        cov_values = [
-            covered_0 / n0 if n0 > 0 else 0.0,
-            covered_1 / n1 if n1 > 0 else 0.0,
-            uncertain_0 / n0 if n0 > 0 else 0.0,
-            uncertain_1 / n1 if n1 > 0 else 0.0,
-        ]
-
-        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-        # Subplot 1 : proportion de chaque type d'ensemble
-        labels_sets = list(proportions.keys())
-        values_sets = list(proportions.values())
-        colors_sets = ["gray", "steelblue", "salmon", "orange"]
-
-        bars0 = axes[0].bar(
-            labels_sets, values_sets,
-            color=colors_sets,
-            edgecolor="black"
-        )
-        axes[0].set_xlabel("Type d'ensemble de prédiction")
-        axes[0].set_ylabel("Proportion")
-        axes[0].set_title(
-            f"Distribution des ensembles de prédiction\n"
-            f"(α={self.alpha}, q̂={self.q_hat:.4f})"
-        )
-        axes[0].set_ylim(0, max(values_sets) * 1.25 if max(values_sets) > 0 else 1)
-        axes[0].grid(axis="y", linestyle="--", alpha=0.6)
-        for bar, val in zip(bars0, values_sets):
-            axes[0].text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.005,
-                f"{val:.3f}",
-                ha="center", va="bottom", fontsize=10
-            )
-
-        # Subplot 2 : couverture et incertitude par vraie classe
-        colors_cov = ["steelblue", "salmon", "cornflowerblue", "lightsalmon"]
-        bars1 = axes[1].bar(
-            cov_labels, cov_values,
-            color=colors_cov,
-            edgecolor="black"
-        )
-        axes[1].axhline(
-            1 - self.alpha,
-            color="red",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Garantie 1-α = {1 - self.alpha:.2f}"
-        )
-        axes[1].set_ylabel("Proportion")
-        axes[1].set_title("Couverture Marginale et incertitude par vraie classe")
-        axes[1].set_ylim(0, 1.15)
-        axes[1].legend()
-        axes[1].grid(axis="y", linestyle="--", alpha=0.6)
-        for bar, val in zip(bars1, cov_values):
-            axes[1].text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.01,
-                f"{val:.3f}",
-                ha="center", va="bottom", fontsize=10
-            )
-
-        plt.tight_layout()
-        plt.show()
+            plt.figure(figsize=(8, 5))
+            sns.countplot(x="prediction_set", data=df, palette="Set2", edgecolor="black")
+            plt.xlabel("Ensemble de prédiction conforme")
+            plt.ylabel("Nombre d'exemples")
+            plt.title("Composition des ensembles de prédiction conforme")
+            plt.grid(True, linestyle="--", alpha=0.5)
+            plt.tight_layout()
+            plt.show()
 
     def plot_float_uncertainty_distribution(self):
         """
@@ -457,16 +357,16 @@ class SplitConformalClassifier:
         plt.tight_layout()
         plt.show()
 
-    def plot_height_uncertainty_distribution(self):
+    def plot_size_uncertainty_distribution(self):
         """
         Visualise la distribution de l'incertitude discrète (taille des ensembles).
         """
-        if self.height_uncertainty_ is None:
-            raise ValueError("height_uncertainty_ n'est pas calculé. Appelez d'abord height_uncertainty().")
+        if self.size_uncertainty_ is None:
+            raise ValueError("size_uncertainty_ n'est pas calculé. Appelez d'abord size_uncertainty().")
 
         plt.figure(figsize=(8, 5))
         plt.hist(
-            self.height_uncertainty_,
+            self.size_uncertainty_,
             bins=[-0.5, 0.5, 1.5, 2.5],  # pour {0}, {1}, {2}
             density=True,
             alpha=0.6,

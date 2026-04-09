@@ -16,7 +16,8 @@ from sklearn.metrics import (
 # Calibration
 # ==============================================================================
 
-def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 10):
+def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 15
+                    ):
     """
     Calibre les probabilités d'un modèle déjà fitté et trace les courbes
     de calibration avant/après.
@@ -36,7 +37,7 @@ def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 
     if not model.is_fitted_:
         raise ValueError("Le modèle doit être fitté avant la calibration.")
 
-    # ✅ Correction principale : on passe model.model (sklearn pur) + cv="prefit"
+    #  Correction principale : on passe model.model (sklearn pur) + cv="prefit"
     raw_sklearn_model = model.model
 
     # ---------- BEFORE calibration ----------
@@ -62,7 +63,7 @@ def prob_calibrator(model, X_cal, y_cal, method: str = "sigmoid", n_bins: int = 
 
 def expected_calibration_error(y_true: np.ndarray,
                                 y_prob: np.ndarray,
-                                n_bins: int = 10) -> float:
+                                n_bins: int = 15  ) -> float:
     """
     Calcule l'ECE (Expected Calibration Error).
 
@@ -126,13 +127,13 @@ def plot_BA_calibration_curve(model, calibrated_model, X_cal, y_cal):
     # Probabilités avant calibration
     y_proba_before = model.predict_proba(X_cal)[:, 1]
     prob_true_before, prob_pred_before = calibration_curve(
-        y_cal, y_proba_before, n_bins=10
+        y_cal, y_proba_before, n_bins=15
     )
 
     # Probabilités après calibration
     y_proba_after = calibrated_model.predict_proba(X_cal)[:, 1]
     prob_true_after, prob_pred_after = calibration_curve(
-        y_cal, y_proba_after, n_bins=10
+        y_cal, y_proba_after, n_bins=15
     )
 
     # Plot

@@ -123,8 +123,8 @@ save_plot("roc_curves_validation.png")
 # CALIBRATION
 # =============================================================================
 
-cal_gb = prob_calibrator(gb, X_val, y_val, method="sigmoid")
-cal_lr = prob_calibrator(lr, X_val, y_val, method="sigmoid")
+cal_gb = prob_calibrator(gb, X_val, y_val, method="sigmoid", n_bins=10)
+cal_lr = prob_calibrator(lr, X_val, y_val, method="sigmoid", n_bins=10)
 
 # Before/After calibration curve
 plot_BA_calibration_curve(gb, cal_gb, X_val, y_val)
@@ -196,6 +196,10 @@ cp_lr.plot_prediction_sets(pred_sets_lr, y_test)
 save_plot("lr_prediction_sets.png")
 
 
+# --- Analyse et couverture empirique ---
+print("\nCouverture empirique GB :", cp_gb.compute_metrics(pred_sets_gb, y_test)["coverage"])
+print("Couverture empirique LR :", cp_lr.compute_metrics(pred_sets_lr, y_test)["coverage"])
+
 # =============================================================================
 # UNCERTAINTY ANALYSIS
 # =============================================================================
@@ -210,18 +214,17 @@ df_for_uncert_lr = cp_lr.add_uncertainties_to_dataset(model=cal_lr, X=X_test)
 cp_gb.plot_float_uncertainty_distribution()
 save_plot("uncertainty_entropy_gb.png")
 
-cp_gb.plot_height_uncertainty_distribution()
-save_plot("uncertainty_height_gb.png")
+cp_gb.plot_size_uncertainty_distribution()
+save_plot("uncertainty_size_gb.png")
 
 cp_lr.plot_float_uncertainty_distribution()
 save_plot("uncertainty_entropy_lr.png")
 
-cp_lr.plot_height_uncertainty_distribution()
-save_plot("uncertainty_height_lr.png")
+cp_lr.plot_size_uncertainty_distribution()
+save_plot("uncertainty_size_lr.png")
 
 
-print("\n=== PIPELINE COMPLETE ===")
-print(f"All graphs saved in : {RESULTS_DIR}/")
+
 
 #====================================================================================
 # Uncertainty Interpretability
@@ -230,21 +233,31 @@ print(f"All graphs saved in : {RESULTS_DIR}/")
 
 interp = UncertaintyInterpreter()
 
+
+#  GB MODEL 
 interp.fit_entropy_model(df_for_uncert_gb)
-interp.fit_height_model(df_for_uncert_gb)
+interp.fit_size_model(df_for_uncert_gb)
 
 interp.compute_shap_entropy(df_for_uncert_gb)
-interp.compute_shap_height(df_for_uncert_gb)
+interp.compute_shap_size(df_for_uncert_gb)
 
 interp.plot_shap_entropy(df_for_uncert_gb)
 save_plot("shap_entropy.png")
-interp.plot_shap_height(df_for_uncert_gb)
-save_plot("shap_height.png")
+interp.plot_shap_size(df_for_uncert_gb)
+save_plot("shap_size.png")
 
-top_entropy, top_height = interp.get_top_features(df_for_uncert_gb, k=10)
+# LR MODEL
+interp.fit_entropy_model(df_for_uncert_lr)
+interp.fit_size_model(df_for_uncert_lr)
+interp.compute_shap_entropy(df_for_uncert_lr)
+interp.compute_shap_size(df_for_uncert_lr)
+interp.plot_shap_entropy(df_for_uncert_lr)
+save_plot("shap_entropy_lr.png")
+interp.plot_shap_size(df_for_uncert_lr)
+save_plot("shap_size_lr.png")
 
-print("\nTop features générant de l'entropie :")
-print(top_entropy)
 
-print("\nTop features générant de la height uncertainty :")
-print(top_height)
+
+
+print("\n=== PIPELINE COMPLETE ===")
+print(f"All graphs saved in : {RESULTS_DIR}/")
